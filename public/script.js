@@ -3,21 +3,11 @@ const form=document.getElementById('poll');
 const results=document.getElementById('results');
 const answers=document.getElementById('answers');
 const questions = [
-  {name:'quality', title:'Качество новой одежды', options:['Да, часто','Иногда','Нет','Затрудняюсь ответить'], counts:[34,24,8,4]},
-  {name:'priority', title:'Главное при выборе', options:['Качество и долговечность','Доступная цена','Известный бренд','Дизайн и посадка'], counts:[30,21,7,12]},
-  {name:'vintage', title:'Отношение к винтажу', options:['Уже покупаю','Хочу попробовать','Пока не рассматриваю','Затрудняюсь ответить'], counts:[19,32,14,5]},
-  {name:'durability', title:'Срок службы одежды', options:['Меньше года','1–2 года','Больше двух лет','По-разному / не знаю'], counts:[18,31,16,5]}
+  {name:'quality', title:'Качество новой одежды', options:['Да, часто','Иногда','Нет','Затрудняюсь ответить']},
+  {name:'priority', title:'Главное при выборе', options:['Качество и долговечность','Доступная цена','Известный бренд','Дизайн и посадка']},
+  {name:'vintage', title:'Отношение к винтажу', options:['Уже покупаю','Хочу попробовать','Пока не рассматриваю','Затрудняюсь ответить']},
+  {name:'durability', title:'Срок службы одежды', options:['Меньше года','1–2 года','Больше двух лет','По-разному / не знаю']}
 ];
-// Seventy deterministic synthetic questionnaires. Each column is shuffled separately.
-const demoResponses = Array.from({length:70}, (_,i) => ({id:`demo-${i+1}`}));
-let seed = 20261118;
-function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
-for (const q of questions) {
-  const column = q.options.flatMap((option,i) => Array(q.counts[i]).fill(option));
-  for (let i=column.length-1;i>0;i--) { const j=Math.floor(random()*(i+1)); [column[i],column[j]]=[column[j],column[i]]; }
-  column.forEach((value,i) => { demoResponses[i][q.name] = value; });
-}
-let chartMode = 'server';
 const key='fashion-check-cloud-v1';
 let current=null;
 let token=null;
@@ -44,13 +34,9 @@ let statsError='';
 let busy=false;
 let loading=null;
 function renderCharts(){
-  const isDemo=chartMode==='demo';
-  const total=isDemo?70:stats?.total;
+  const total=stats?.total;
   document.getElementById('local-count').textContent=stats?String(stats.total):'—';
-  document.getElementById('chart-note').textContent=isDemo
-    ?'Демонстрационные данные · 70 вымышленных анкет. Не являются результатами исследования.'
-    :statsError||(stats?`Общая статистика · ${total} сохранённых анкет. Обновляется каждые 30 секунд.`:'Загружаем общую статистику…');
-  document.querySelectorAll('[data-chart-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.chartMode===chartMode)));
+  document.getElementById('chart-note').textContent=statsError||(stats?`Общая статистика · ${total} сохранённых анкет. Обновляется каждые 30 секунд.`:'Загружаем общую статистику…');
   const charts=document.getElementById('charts');charts.replaceChildren();
   for(const q of questions){
     const card=document.createElement('article');card.className='chart-card';
@@ -61,7 +47,7 @@ function renderCharts(){
     } else {
       const list=document.createElement('ul');list.className='chart-list';
       q.options.forEach((option,i)=>{
-        const count=isDemo?demoResponses.filter(r=>r[q.name]===option).length:stats.counts[q.name][i];
+        const count=stats.counts[q.name][i];
         const percent=count/total*100;
         const item=document.createElement('li');
         const label=document.createElement('div');label.className='chart-label';
@@ -111,14 +97,13 @@ form.addEventListener('submit',async event=>{
   try{
     const response=await request({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if(response.saved!==true)throw Error();
-    current=row;remember();status.textContent='';chartMode='server';showSummary(row,true);
+    current=row;remember();status.textContent='';showSummary(row,true);
     await refreshStats();
   }catch{status.textContent='Не удалось подтвердить сохранение. Проверьте интернет и попробуйте снова. Повторная отправка этой анкеты не увеличит счётчик.';}
   finally{busy=false;submit.disabled=false;}
 });
 document.getElementById('edit').addEventListener('click',()=>{results.hidden=true;form.hidden=false;form.querySelector('input').focus();});
 document.getElementById('next-participant').addEventListener('click',()=>{current=null;token=null;remember();form.reset();results.hidden=true;form.hidden=false;form.querySelector('input').focus();});
-document.querySelectorAll('[data-chart-mode]').forEach(button=>button.addEventListener('click',()=>{chartMode=button.dataset.chartMode;renderCharts();}));
 document.getElementById('refresh-stats').addEventListener('click',refreshStats);
 if(current){for(const input of form.querySelectorAll('input[type="radio"]'))input.checked=current[input.name]===input.value;showSummary(current,false);}
 renderCharts();refreshStats();
