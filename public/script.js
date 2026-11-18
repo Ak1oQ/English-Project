@@ -1,111 +1,88 @@
-'use strict';
+import {questions,surveyVersion,googleResults,validAnswers,emptyCounts,combineStats} from './survey-config.js';
 const form=document.getElementById('poll');
 const results=document.getElementById('results');
-const answers=document.getElementById('answers');
-const questions = [
-  {name:'quality', title:'Качество новой одежды', options:['Да, часто','Иногда','Нет','Затрудняюсь ответить']},
-  {name:'priority', title:'Главное при выборе', options:['Качество и долговечность','Доступная цена','Известный бренд','Дизайн и посадка']},
-  {name:'vintage', title:'Отношение к винтажу', options:['Уже покупаю','Хочу попробовать','Пока не рассматриваю','Затрудняюсь ответить']},
-  {name:'durability', title:'Срок службы одежды', options:['Меньше года','1–2 года','Больше двух лет','По-разному / не знаю']}
-];
-const key='fashion-check-cloud-v1';
-let current=null;
-let token=null;
-try {
-  const saved=JSON.parse(localStorage.getItem(key)||'null');
-  if (saved && /^[a-f0-9]{64}$/.test(saved.token)) {
-    token=saved.token;
-    if (saved.answers && questions.every(q=>q.options.includes(saved.answers[q.name]))) current=saved.answers;
-  }
-} catch {}
-function getToken(){
-  if (!token) {
-    const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);
-    token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
-  }
-  return token;
+const summary=document.getElementById('answers');
+const fields=document.getElementById('survey-fields');
+const key='fashion-check-cloud-v2';
+let token=null,current=null,busy=false,loading=null;
+let stats=combineStats(0,emptyCounts()),onlineKnown=false,statsError='';
+for(const [index,q] of questions.entries()){
+  const fieldset=document.createElement('fieldset');
+  const legend=document.createElement('legend');legend.textContent=`${index+1}. ${q.title}`;fieldset.append(legend);
+  if(q.multiple){const hint=document.createElement('p');hint.id='priorities-hint';hint.className='question-hint';hint.textContent='Можно выбрать несколько вариантов. Отметьте хотя бы один.';fieldset.append(hint);fieldset.setAttribute('aria-describedby',hint.id);}
+  q.options.forEach((text,i)=>{
+    const label=document.createElement('label');const input=document.createElement('input');
+    input.type=q.multiple?'checkbox':'radio';input.name=q.id;input.value=String(i);input.required=!q.multiple;
+    if(q.multiple)input.addEventListener('change',validateMultiple);
+    const caption=document.createElement('span');caption.textContent=text;label.append(input,caption);fieldset.append(label);
+  });fields.append(fieldset);
 }
-function remember(){
-  try {localStorage.setItem(key,JSON.stringify({token,answers:current}));}
-  catch {document.getElementById('storage-note').textContent='Ответы сохраняются в общей базе. Браузер запретил локальное хранение: после перезагрузки он не сможет узнать вашу анкету для редактирования.';}
+function validateMultiple(){
+  const inputs=[...form.querySelectorAll('input[name="priorities"]')];
+  inputs[0].setCustomValidity(inputs.some(input=>input.checked)?'':'Выберите хотя бы один вариант во втором вопросе.');
 }
-let stats=null;
-let statsError='';
-let busy=false;
-let loading=null;
+try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&/^[a-f0-9]{64}$/.test(saved.token)){token=saved.token;if(validAnswers(saved.answers))current=saved.answers;}}catch{}
+function getToken(){if(!token){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}return token;}
+function remember(){try{localStorage.setItem(key,JSON.stringify({token,answers:current}));}catch{document.getElementById('storage-note').textContent='Ответы сохраняются в общей базе. Браузер запретил локальное хранение: после перезагрузки он не сможет узнать вашу анкету для редактирования.';}}
+function appendChart({title,options,counts,total,note}){
+  const card=document.createElement('article');card.className='chart-card';
+  const heading=document.createElement('h3');heading.textContent=title;card.append(heading);
+  const subtitle=document.createElement('p');subtitle.className='chart-source';subtitle.textContent=note;card.append(subtitle);
+  if(!total){const empty=document.createElement('p');empty.className='chart-empty';empty.textContent='Новых ответов пока нет.';card.append(empty);}
+  else{
+    const list=document.createElement('ul');list.className='chart-list';
+    options.forEach((text,i)=>{
+      const item=document.createElement('li');const label=document.createElement('div');label.className='chart-label';
+      const caption=document.createElement('span');caption.textContent=text;
+      const value=document.createElement('span');value.className='chart-value';value.textContent=`${counts[i]} · ${(counts[i]/total*100).toFixed(1).replace('.',',')}%`;
+      label.append(caption,value);
+      const track=document.createElement('div');track.className='chart-track';track.setAttribute('aria-hidden','true');
+      const fill=document.createElement('span');fill.className=`chart-fill tone-${i}`;fill.style.width=`${counts[i]/total*100}%`;track.append(fill);
+      item.append(label,track);list.append(item);
+    });card.append(list);
+  }
+  document.getElementById('charts').append(card);
+}
 function renderCharts(){
-  const total=stats?.total;
-  document.getElementById('local-count').textContent=stats?String(stats.total):'—';
-  document.getElementById('chart-note').textContent=statsError||(stats?`Общая статистика · ${total} сохранённых анкет. Обновляется каждые 30 секунд.`:'Загружаем общую статистику…');
-  const charts=document.getElementById('charts');charts.replaceChildren();
-  for(const q of questions){
-    const card=document.createElement('article');card.className='chart-card';
-    const title=document.createElement('h3');title.textContent=q.title;card.append(title);
-    if(!total){
-      const empty=document.createElement('p');empty.className='chart-empty';
-      empty.textContent=total===0?'Пока нет анкет. Станьте первым участником!':(statsError?'Статистика недоступна. Попробуйте обновить её.':'Загрузка…');card.append(empty);
-    } else {
-      const list=document.createElement('ul');list.className='chart-list';
-      q.options.forEach((option,i)=>{
-        const count=stats.counts[q.name][i];
-        const percent=count/total*100;
-        const item=document.createElement('li');
-        const label=document.createElement('div');label.className='chart-label';
-        const name=document.createElement('span');name.textContent=option;
-        const value=document.createElement('strong');value.textContent=`${count} · ${percent.toFixed(1).replace('.',',')}%`;
-        label.append(name,value);
-        const track=document.createElement('div');track.className='chart-track';track.setAttribute('aria-hidden','true');
-        const bar=document.createElement('span');bar.className=`chart-fill tone-${i}`;bar.style.width=`${percent}%`;track.append(bar);
-        item.append(label,track);list.append(item);
-      });card.append(list);
-    }charts.append(card);
-  }
+  document.getElementById('local-count').textContent=onlineKnown?String(stats.total):'27+';
+  document.getElementById('chart-note').textContent=statsError||(onlineKnown?`27 анкет Google Forms + ${stats.onlineTotal} анкет с сайта. Обновление каждые 30 секунд.`:'Показаны 27 анкет Google Forms. Загружаем ответы с сайта…');
+  document.getElementById('charts').replaceChildren();
+  questions.forEach((q,i)=>{
+    if(q.id==='brand')appendChart({title:`6. ${googleResults.brand.title}`,options:googleResults.brand.options,counts:googleResults.brand.counts,total:27,note:'Google Forms · 27 ответов · исходные пять вариантов ответа.'});
+    const total=stats.denominators[q.id];
+    let note=q.id==='brand'?`${total} ответов на сайте · обновлённые четыре варианта ответа.`:`${total} ответов${q.multiple?' · несколько вариантов: сумма процентов может превышать 100%.':''}`;
+    if(q.id==="frequency")note+=" · Вариант «Несколько раз в месяц» добавлен только в новую форму.";
+    appendChart({title:`${i+1}. ${q.title}${q.id==='brand'?' — новая версия':''}`,options:q.options,counts:stats.counts[q.id],total,note});
+  });
 }
-async function request(options){
-  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);
-  try{
-    const response=await fetch('/api/votes',{cache:'no-store',...options,signal:controller.signal});
-    if(!response.ok)throw new Error('Request failed');
-    return await response.json();
-  }finally{clearTimeout(timeout);}
+async function request(options){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);try{const response=await fetch('/api/votes',{cache:'no-store',...options,signal:controller.signal});if(!response.ok)throw Error();return await response.json();}finally{clearTimeout(timer);}}
+function validStats(data){
+  return data&&data.version===surveyVersion&&Number.isSafeInteger(data.onlineTotal)&&data.onlineTotal>=0&&data.googleTotal===27&&data.total===27+data.onlineTotal&&questions.every(q=>{
+    const n=data.denominators?.[q.id],counts=data.counts?.[q.id];
+    if(n!==data.onlineTotal+(q.id==='brand'?0:27)||!Array.isArray(counts)||counts.length!==q.options.length||!counts.every(c=>Number.isSafeInteger(c)&&c>=0&&c<=n))return false;
+    const sum=counts.reduce((a,b)=>a+b,0);return q.multiple?sum>=n&&sum<=n*q.options.length:sum===n;
+  });
 }
 async function refreshStats(){
   if(loading)return loading;
-  loading=(async()=>{
-    try{
-      const data=await request();
-      if(!Number.isInteger(data.total)||data.total<0||!questions.every(q=>Array.isArray(data.counts?.[q.name])&&data.counts[q.name].length===4&&data.counts[q.name].every(n=>Number.isInteger(n)&&n>=0)&&data.counts[q.name].reduce((a,b)=>a+b,0)===data.total))throw Error();
-      stats=data;statsError='';
-    }catch{statsError=stats?'Не удалось обновить статистику. Показаны последние загруженные данные.':'Не удалось загрузить статистику. Проверьте подключение сайта к базе данных.';}
-    renderCharts();
-  })();
+  loading=(async()=>{try{const data=await request();if(!validStats(data))throw Error();stats=data;onlineKnown=true;statsError='';}catch{statsError=onlineKnown?'Не удалось обновить статистику. Показаны последние загруженные данные.':'Ответы с сайта пока недоступны. Показаны только 27 анкет Google Forms.';}renderCharts();})();
   try{await loading;}finally{loading=null;}
 }
-function showSummary(row,focus){
-  answers.replaceChildren();
-  for(const q of questions){const dt=document.createElement('dt');dt.textContent=q.title;const dd=document.createElement('dd');dd.textContent=row[q.name];answers.append(dt,dd);}
-  form.hidden=true;results.hidden=false;if(focus)results.focus();
-}
+function showSummary(answers,focus){summary.replaceChildren();for(const q of questions){const dt=document.createElement('dt');dt.textContent=q.title;const dd=document.createElement('dd');dd.textContent=(q.multiple?answers[q.id]:[answers[q.id]]).map(i=>q.options[i]).join('; ');summary.append(dt,dd);}form.hidden=true;results.hidden=false;if(focus)results.focus();}
 form.addEventListener('submit',async event=>{
-  event.preventDefault();if(busy||!form.reportValidity())return;
-  const data=new FormData(form);const row={};const payload={token:getToken()};
-  for(const q of questions){row[q.name]=data.get(q.name);payload[q.name]=q.options.indexOf(row[q.name]);}
-  // Remember the token before networking so a retry after reload targets the same row.
-  remember();busy=true;
-  const submit=form.querySelector('button[type="submit"]');submit.disabled=true;
+  event.preventDefault();validateMultiple();if(busy||!form.reportValidity())return;
+  const data=new FormData(form);const answers={};
+  for(const q of questions)answers[q.id]=q.multiple?data.getAll(q.id).map(Number):Number(data.get(q.id));
+  if(!validAnswers(answers))return;
+  const payload={version:surveyVersion,token:getToken(),answers};remember();busy=true;
+  const button=form.querySelector('button[type="submit"]');button.disabled=true;
   const status=document.getElementById('submit-status');status.textContent='Сохраняем анкету…';
-  try{
-    const response=await request({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(response.saved!==true)throw Error();
-    current=row;remember();status.textContent='';showSummary(row,true);
-    await refreshStats();
-  }catch{status.textContent='Не удалось подтвердить сохранение. Проверьте интернет и попробуйте снова. Повторная отправка этой анкеты не увеличит счётчик.';}
-  finally{busy=false;submit.disabled=false;}
+  try{const reply=await request({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(reply.saved!==true||reply.version!==surveyVersion)throw Error();current=answers;remember();status.textContent='';showSummary(answers,true);await refreshStats();}
+  catch{status.textContent='Не удалось подтвердить сохранение. Проверьте интернет и попробуйте снова. Повторная отправка этой анкеты не создаст дубликат.';}
+  finally{busy=false;button.disabled=false;}
 });
 document.getElementById('edit').addEventListener('click',()=>{results.hidden=true;form.hidden=false;form.querySelector('input').focus();});
-document.getElementById('next-participant').addEventListener('click',()=>{current=null;token=null;remember();form.reset();results.hidden=true;form.hidden=false;form.querySelector('input').focus();});
+document.getElementById('next-participant').addEventListener('click',()=>{current=null;token=null;remember();form.reset();validateMultiple();results.hidden=true;form.hidden=false;form.querySelector('input').focus();});
 document.getElementById('refresh-stats').addEventListener('click',refreshStats);
-if(current){for(const input of form.querySelectorAll('input[type="radio"]'))input.checked=current[input.name]===input.value;showSummary(current,false);}
-renderCharts();refreshStats();
-setInterval(()=>{if(!document.hidden)refreshStats();},30000);
-window.addEventListener('focus',refreshStats);
+if(current){for(const input of form.querySelectorAll('input')){const q=questions.find(q=>q.id===input.name);input.checked=q.multiple?current[q.id].includes(Number(input.value)):current[q.id]===Number(input.value);}showSummary(current,false);}
+validateMultiple();renderCharts();refreshStats();setInterval(()=>{if(!document.hidden)refreshStats();},30000);window.addEventListener('focus',refreshStats);

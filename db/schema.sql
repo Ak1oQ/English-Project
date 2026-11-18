@@ -1,11 +1,11 @@
--- Run once in the Neon SQL Editor before collecting responses.
-CREATE TABLE IF NOT EXISTS fashion_responses (
-  token_hash text PRIMARY KEY CHECK (length(token_hash) = 64),
-  quality smallint NOT NULL CHECK (quality BETWEEN 0 AND 3),
-  priority smallint NOT NULL CHECK (priority BETWEEN 0 AND 3),
-  vintage smallint NOT NULL CHECK (vintage BETWEEN 0 AND 3),
-  durability smallint NOT NULL CHECK (durability BETWEEN 0 AND 3),
+-- The v2 API creates this table automatically on first use.
+-- This optional SQL can also be run manually in Neon.
+-- The original fashion_responses table remains untouched.
+CREATE TABLE IF NOT EXISTS fashion_responses_v2 (
+  token_hash text PRIMARY KEY CHECK (length(token_hash)=64),
+  answers jsonb NOT NULL CHECK (jsonb_typeof(answers)='object'),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
--- No demo records are inserted into this table.
+-- 27 Google Forms results are aggregate counts in public/survey-config.js,
+-- not fabricated individual rows. They are added once when computing statistics.
