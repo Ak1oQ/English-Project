@@ -1,4 +1,4 @@
-import {questions,surveyVersion,googleResults,validAnswers,emptyCounts,combineStats} from './survey-config.js';
+import {questions,surveyVersion,googleResults,validAnswers,emptyCounts,combineStats,upgradeLegacyAnswers} from './survey-config.js';
 const form=document.getElementById('poll');
 const results=document.getElementById('results');
 const summary=document.getElementById('answers');
@@ -21,9 +21,9 @@ function validateMultiple(){
   const inputs=[...form.querySelectorAll('input[name="priorities"]')];
   inputs[0].setCustomValidity(inputs.some(input=>input.checked)?'':'Выберите хотя бы один вариант во втором вопросе.');
 }
-try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&/^[a-f0-9]{64}$/.test(saved.token)){token=saved.token;if(validAnswers(saved.answers))current=saved.answers;}}catch{}
+try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&/^[a-f0-9]{64}$/.test(saved.token)){token=saved.token;const restored=saved.version===surveyVersion?saved.answers:upgradeLegacyAnswers(saved.answers);if(validAnswers(restored))current=restored;}}catch{}
 function getToken(){if(!token){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}return token;}
-function remember(){try{localStorage.setItem(key,JSON.stringify({token,answers:current}));}catch{document.getElementById('storage-note').textContent='Ответы сохраняются в общей базе. Браузер запретил локальное хранение: после перезагрузки он не сможет узнать вашу анкету для редактирования.';}}
+function remember(){try{localStorage.setItem(key,JSON.stringify({token,answers:current,version:surveyVersion}));}catch{document.getElementById('storage-note').textContent='Ответы сохраняются в общей базе. Браузер запретил локальное хранение: после перезагрузки он не сможет узнать вашу анкету для редактирования.';}}
 function appendChart({title,options,counts,total,note}){
   const card=document.createElement('article');card.className='chart-card';
   const heading=document.createElement('h3');heading.textContent=title;card.append(heading);
@@ -45,21 +45,20 @@ function appendChart({title,options,counts,total,note}){
 }
 function renderCharts(){
   document.getElementById('local-count').textContent=onlineKnown?String(stats.total):'27+';
-  document.getElementById('chart-note').textContent=statsError||(onlineKnown?`27 анкет Google Forms + ${stats.onlineTotal} анкет с сайта. Обновление каждые 30 секунд.`:'Показаны 27 анкет Google Forms. Загружаем ответы с сайта…');
+  document.getElementById('chart-note').textContent=statsError;
   document.getElementById('charts').replaceChildren();
   questions.forEach((q,i)=>{
-    if(q.id==='brand')appendChart({title:`6. ${googleResults.brand.title}`,options:googleResults.brand.options,counts:googleResults.brand.counts,total:27,note:'Google Forms · 27 ответов · исходные пять вариантов ответа.'});
     const total=stats.denominators[q.id];
-    let note=q.id==='brand'?`${total} ответов на сайте · обновлённые четыре варианта ответа.`:`${total} ответов${q.multiple?' · несколько вариантов: сумма процентов может превышать 100%.':''}`;
+    let note=`${total} ответов${q.multiple?' · можно выбрать несколько вариантов.':''}`;
     if(q.id==="frequency")note+=" · Вариант «Несколько раз в месяц» добавлен только в новую форму.";
-    appendChart({title:`${i+1}. ${q.title}${q.id==='brand'?' — новая версия':''}`,options:q.options,counts:stats.counts[q.id],total,note});
+    appendChart({title:`${i+1}. ${q.title}`,options:q.options,counts:stats.counts[q.id],total,note});
   });
 }
 async function request(options){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);try{const response=await fetch('/api/votes',{cache:'no-store',...options,signal:controller.signal});if(!response.ok)throw Error();return await response.json();}finally{clearTimeout(timer);}}
 function validStats(data){
   return data&&data.version===surveyVersion&&Number.isSafeInteger(data.onlineTotal)&&data.onlineTotal>=0&&data.googleTotal===27&&data.total===27+data.onlineTotal&&questions.every(q=>{
     const n=data.denominators?.[q.id],counts=data.counts?.[q.id];
-    if(n!==data.onlineTotal+(q.id==='brand'?0:27)||!Array.isArray(counts)||counts.length!==q.options.length||!counts.every(c=>Number.isSafeInteger(c)&&c>=0&&c<=n))return false;
+    if(n!==data.onlineTotal+27||!Array.isArray(counts)||counts.length!==q.options.length||!counts.every(c=>Number.isSafeInteger(c)&&c>=0&&c<=n))return false;
     const sum=counts.reduce((a,b)=>a+b,0);return q.multiple?sum>=n&&sum<=n*q.options.length:sum===n;
   });
 }

@@ -15,12 +15,12 @@ test('Google Forms counts match 27 responses; checkbox denominator is respondent
  assert.equal(googleResults.total,27);
  for(const [id,counts] of Object.entries(googleResults.counts))if(id!=='priorities')assert.equal(counts.reduce((a,b)=>a+b),27,id);
  assert.deepEqual(googleResults.counts.priorities,[11,6,14,3,9]);assert.equal(googleResults.counts.priorities.reduce((a,b)=>a+b),43);
- assert.equal(googleResults.brand.counts.reduce((a,b)=>a+b),27);assert.equal(googleResults.brand.options.length,5);
- const stats=summarize([]);assert.equal(stats.total,27);assert.equal(stats.denominators.brand,0);assert.deepEqual(stats.counts.brand,[0,0,0,0]);
+ assert.equal(googleResults.counts.brand.reduce((a,b)=>a+b),27);assert.equal(questions[5].options.length,5);
+ const stats=summarize([]);assert.equal(stats.total,27);assert.equal(stats.denominators.brand,27);assert.deepEqual(stats.counts.brand,[3,9,7,2,6]);
 });
-test('combines aggregates without fabricating rows or merging incompatible question six',()=>{
- const stats=summarize([{answers:answers(),count:2}]);assert.equal(stats.total,29);assert.equal(stats.onlineTotal,2);assert.equal(stats.denominators.brand,2);assert.equal(stats.denominators.priorities,29);
- assert.deepEqual(stats.counts.priorities,[13,6,16,3,9]);assert.deepEqual(stats.counts.brand,[2,0,0,0]);
+test('combines aggregates with the restored five-option question six',()=>{
+ const stats=summarize([{answers:answers(),count:2}]);assert.equal(stats.total,29);assert.equal(stats.onlineTotal,2);assert.equal(stats.denominators.brand,29);assert.equal(stats.denominators.priorities,29);
+ assert.deepEqual(stats.counts.priorities,[13,6,16,3,9]);assert.deepEqual(stats.counts.brand,[5,9,7,2,6]);
  assert.equal(stats.counts.frequency.reduce((a,b)=>a+b),29);
 });
 test('new table setup, save, idempotent edit, next participant, reload and aggregate response',async()=>{
@@ -41,4 +41,11 @@ test('failed initialization can retry, and failures never report a saved vote',a
  let attempts=0;const handler=createHandler(()=>async(strings)=>{if(strings[0].includes('CREATE TABLE')&&attempts++===0)throw Error('private');return [];});
  let res=response();await handler(req('GET'),res);assert.equal(res.code,503);assert(!JSON.stringify(res.data).includes('private'));
  res=response();await handler(req('GET'),res);assert.equal(res.code,200);assert.equal(res.data.total,27);
+});
+
+test('old four-option brand choices migrate at read time without changing counts',()=>{
+ const rows=[0,1,2,3].map(brand=>({answers:{...answers(),brand},count:1}));
+ const stats=summarize(rows);assert.equal(stats.total,31);assert.deepEqual(stats.counts.brand,[4,9,8,3,7]);
+ const current=summarize([{answers:{...answers(),brand:1,_version:surveyVersion},count:1}]);
+ assert.deepEqual(current.counts.brand,[3,10,7,2,6]);
 });
