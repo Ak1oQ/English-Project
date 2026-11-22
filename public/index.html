@@ -108,6 +108,7 @@
       </div>
       <p id="comparison-status" class="visually-hidden" role="status"></p>
       <div id="product-grid" class="product-grid"></div>
+      <div class="catalog-more"><button id="more-products" class="catalog-button" type="button" aria-controls="product-grid" hidden>Показать ещё</button></div>
       <div id="empty-products" class="empty-products" hidden><p>По этим условиям ничего не найдено.</p><button id="clear-results-filters" class="catalog-button" type="button">Сбросить фильтры и поиск</button></div>
       <p class="catalog-note">Цены взяты из карточек магазинов. Актуальную цену, размеры и наличие смотри у продавца. Метки стиля подбирает Fashion Check.</p>
       <dialog id="filters-dialog" class="catalog-dialog filters-dialog" aria-labelledby="filter-title">
@@ -116,6 +117,7 @@
           <div class="filter-selects">
             <label class="filter-field" for="product-category">Категория<select id="product-category" autofocus><option value="">Все категории</option></select></label>
             <label class="filter-field" for="product-brand">Бренд<select id="product-brand"><option value="">Все бренды</option></select></label>
+            <label class="filter-field filter-store" for="product-store">Магазин<select id="product-store"><option value="">Все магазины</option></select></label>
           </div>
           <fieldset class="filter-price">
             <legend>Диапазон цен</legend>

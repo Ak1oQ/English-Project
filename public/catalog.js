@@ -8,6 +8,8 @@ const filterDialog = get('filters-dialog');
 const comparisonDialog = get('comparison-dialog');
 const category = get('product-category');
 const brand = get('product-brand');
+const store = get('product-store');
+const moreProducts = get('more-products');
 const styleOptions = get('style-options');
 const minSlider = get('price-min');
 const maxSlider = get('price-max');
@@ -18,14 +20,16 @@ const compareButton = get('open-comparison');
 const priceCeiling = Math.ceil(Math.max(...products.map(item => item.price)) / 1000) * 1000;
 const budgetCeiling = 4000;
 const compareLimit = 4;
+const pageSize = 24;
 const priceFormat = new Intl.NumberFormat('ru-RU');
 const productByUrl = new Map(products.map(item => [item.url, item]));
 const selected = new Set();
 let active = defaultFilters();
 let budgetUndo = null;
+let matches = [];
 
 function defaultFilters() {
-  return { category: '', brand: '', styles: [], min: 0, max: priceCeiling };
+  return { category: '', brand: '', store: '', styles: [], min: 0, max: priceCeiling };
 }
 function rubles(value) {
   return `${priceFormat.format(value)} ₽`;
@@ -45,6 +49,7 @@ function matchingProducts(filters) {
     const searchable = normalize(`${item.title} ${item.brand} ${categories[item.category]} ${item.color || ''}`);
     return (!filters.category || item.category === filters.category) &&
       (!filters.brand || item.brand === filters.brand) &&
+      (!filters.store || item.store === filters.store) &&
       item.price >= filters.min && item.price <= filters.max &&
       (!filters.styles.length || filters.styles.some(style => item.styles.includes(style))) &&
       terms.every(term => searchable.includes(term));
@@ -55,7 +60,10 @@ function matchingProducts(filters) {
 }
 
 for (const [key, title] of Object.entries(categories)) category.add(new Option(title, key));
-for (const name of [...new Set(products.map(item => item.brand))].sort((a, b) => a.localeCompare(b, 'ru'))) brand.add(new Option(name, name));
+for (const select of [brand, store]) {
+  const distinct = new Set(products.map(item => select === brand ? item.brand : item.store));
+  for (const name of [...distinct].sort((a, b) => a.localeCompare(b, 'ru'))) select.add(new Option(name, name));
+}
 for (const [key, title] of Object.entries(styleNames)) {
   const label = node('label', 'style-option');
   const input = node('input');
@@ -69,6 +77,7 @@ for (const input of [minSlider, maxSlider, fromInput, toInput]) input.max = Stri
 function applyDraftValues(filters) {
   category.value = filters.category;
   brand.value = filters.brand;
+  store.value = filters.store;
   for (const input of styleOptions.querySelectorAll('input')) input.checked = filters.styles.includes(input.value);
   updatePriceControls(filters.min, filters.max);
 }
@@ -89,6 +98,7 @@ function readDraft() {
   return {
     category: category.value,
     brand: brand.value,
+    store: store.value,
     styles: [...styleOptions.querySelectorAll('input:checked')].map(input => input.value),
     min: Number(minSlider.value),
     max: Number(maxSlider.value),
@@ -119,7 +129,7 @@ for (const input of [fromInput, toInput]) {
   input.addEventListener('input', () => updateFromInput(input, input));
   input.addEventListener('blur', () => updateFromInput(input));
 }
-for (const control of [category, brand, styleOptions]) control.addEventListener('change', previewCount);
+for (const control of [category, brand, store, styleOptions]) control.addEventListener('change', previewCount);
 
 function openFilterDialog(focusStyle = false) {
   applyDraftValues(active);
@@ -165,7 +175,7 @@ for (const dialog of [filterDialog, comparisonDialog]) {
 function productMedia(item) {
   const media = node('div', 'product-media');
   media.setAttribute('aria-hidden', 'true');
-  media.append(node('span', '', categories[item.category]));
+  media.append(node('span', '', 'Фото недоступно'));
   if (item.image) {
     const image = node('img');
     image.alt = '';
@@ -189,7 +199,7 @@ function productCard(item) {
   const info = node('div', 'product-info');
   info.append(node('span', 'product-brand', item.brand), node('h2', '', item.title),
     node('span', 'product-brand', item.color || categories[item.category]),
-    node('span', 'product-price', rubles(item.price)), node('span', 'product-cta', item.store === 'Lamoda' ? 'Смотреть на Lamoda' : 'Смотреть в магазине'));
+    node('span', 'product-price', rubles(item.price)), node('span', 'product-cta', 'Магазин · '+item.store));
   link.append(productMedia(item), info);
   const toggle = node('button', 'product-compare', 'Сравнить');
   toggle.type = 'button';
@@ -269,9 +279,25 @@ compareButton.addEventListener('click', () => {
   comparisonDialog.showModal();
 });
 
+function appendProductPage() {
+  const shown = grid.childElementCount;
+  const page = matches.slice(shown, shown + pageSize).map(productCard);
+  grid.append(...page);
+  const count = grid.childElementCount;
+  moreProducts.hidden = count >= matches.length;
+  const remaining = moreProducts.hidden ? '' : ` · показано ${count}`;
+  get('product-count').textContent = `Найдено ${matches.length} из ${products.length}${remaining}`;
+  updateComparisonControls();
+  return page[0];
+}
+moreProducts.addEventListener('click', event => {
+  const firstCard = appendProductPage();
+  if (firstCard && (event.detail === 0 || moreProducts.hidden)) firstCard.querySelector('a').focus();
+});
+
 function renderCatalog() {
-  const matches = matchingProducts(active);
-  const labels = [categories[active.category], active.brand, ...active.styles.map(key => styleNames[key])].filter(Boolean);
+  matches = matchingProducts(active);
+  const labels = [categories[active.category], active.brand, active.store, ...active.styles.map(key => styleNames[key])].filter(Boolean);
   if (active.min > 0 || active.max < priceCeiling) labels.push(`${rubles(active.min)} — ${rubles(active.max)}`);
   const filterCount = get('filter-count');
   filterCount.hidden = labels.length === 0;
@@ -280,10 +306,9 @@ function renderCatalog() {
   activeFilters.hidden = labels.length === 0;
   activeFilters.textContent = labels.join(' · ');
   budgetButton.setAttribute('aria-pressed', String(active.min === 0 && active.max === budgetCeiling));
-  get('product-count').textContent = `Найдено ${matches.length} из ${products.length}`;
   get('empty-products').hidden = matches.length > 0;
-  grid.replaceChildren(...matches.map(productCard));
-  updateComparisonControls();
+  grid.replaceChildren();
+  appendProductPage();
 }
 search.addEventListener('input', renderCatalog);
 sort.addEventListener('change', renderCatalog);
