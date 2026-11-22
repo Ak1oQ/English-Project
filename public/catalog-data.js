@@ -1,9 +1,13 @@
+import { expandedProducts } from './catalog-expansion.js';
+
 export const categories = {
   jackets: 'Куртки',
   tees: 'Футболки и лонгсливы',
   jeans: 'Джинсы',
   sweats: 'Худи и свитшоты',
   shirts: 'Рубашки',
+  trousers: 'Брюки',
+  sneakers: 'Кроссовки',
 };
 
 function befree(title, category, price, article, color) {
@@ -26,7 +30,7 @@ function ostin(title, category, price, slug, id) {
   return { title, category, price, brand: 'O’STIN', url: `https://ostin.com/product/${slug}/${id}` };
 }
 
-export const products = [
+const originalProducts = [
   befree('Джинсовая куртка с отложным воротником', 'jackets', 3599, 'BF2633101009', 106),
   zarina('Утеплённая куртка на кулиске', 'jackets', 5599, 'zr2611102204-50', 'zr261/thumb/900_9999/zr2611102204_50_1.webp?t=1794410592'),
   befree('Цветная джинсовая куртка', 'jackets', 2999, 'BF2633101032', 70),
@@ -53,3 +57,28 @@ export const products = [
   zarina('Куртка с широким меховым воротником', 'jackets', 5599, 'zr2611102208-61', 'zr261/thumb/900_9999/zr2611102208_61_1.webp?t=1791813592'),
   befree('Утеплённая джинсовая куртка без капюшона', 'jackets', 6599, 'BF2623101002', 62),
 ];
+
+export const styleNames = {
+  casual: 'Повседневный',
+  business: 'Деловой',
+  grunge: 'Гранж',
+  street: 'Стритвир',
+  sport: 'Спортивный',
+  minimal: 'Минимализм',
+};
+
+function originalStyles({ title, category }) {
+  const name = title.toLowerCase();
+  if (category === 'jackets') {
+    if (name.includes('джинсов')) return ['casual', 'street', 'grunge'];
+    return name.includes('бомбер') ? ['casual', 'street'] : ['casual', 'minimal'];
+  }
+  if (category === 'jeans') return ['casual', 'street', 'grunge'];
+  if (category === 'shirts') return name.includes('приталенная') ? ['business', 'minimal'] : ['casual', 'business'];
+  if (category === 'sweats') return ['casual', 'sport', 'street'];
+  return ['casual', 'minimal'];
+}
+
+const originals = originalProducts.map(product => ({ ...product, store: product.brand, styles: originalStyles(product) }));
+const additions = expandedProducts.map(product => ({ ...product, store: 'Lamoda' }));
+export const products = [...originals.slice(0, 3), ...additions, ...originals.slice(3)];

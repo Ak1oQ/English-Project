@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="competition.css">
   <script type="module" src="competition.js"></script>
+  <script type="module" src="catalog.js"></script>
   <script type="module" src="script.js"></script>
 </head>
 <body>
@@ -87,18 +88,56 @@
       <a class="action-primary" href="#catalog">Сравнить товары</a>
     </section>
     <section class="view catalog-view" data-view="catalog" id="catalog" aria-labelledby="catalog-title">
-      <header class="view-heading"><h1 id="catalog-title">Каталог одежды</h1><p>Сравни вещи из российских магазинов по категории, бренду и бюджету. Карточка откроет товар в магазине.</p></header>
-      <div class="category-nav" id="categories" role="group" aria-label="Категории одежды"></div>
-      <form class="catalog-filters" id="catalog-filters" aria-label="Фильтры каталога">
-        <label>Поиск<input type="search" id="product-search" placeholder="Например, джинсовая"></label>
-        <label>Бренд<select id="product-brand"><option value="">Все бренды</option></select></label>
-        <label>Бюджет<select id="product-budget"><option value="">Любой</option><option value="2000">До 2 000 ₽</option><option value="4000">До 4 000 ₽</option><option value="6000">До 6 000 ₽</option><option value="8000">До 8 000 ₽</option></select></label>
-        <label>Сортировка<select id="product-sort"><option value="featured">По подборке</option><option value="low">Сначала дешевле</option><option value="high">Сначала дороже</option></select></label>
-      </form>
-      <div class="catalog-status"><p id="product-count" aria-live="polite"></p><button id="reset-filters" type="button">Сбросить фильтры</button></div>
+      <header class="view-heading"><h1 id="catalog-title">Каталог одежды</h1><p>Найди вещи под свой стиль и бюджет. Отметь понравившиеся модели, чтобы сравнить их перед покупкой.</p></header>
+      <div class="catalog-toolbar" aria-label="Поиск и фильтры каталога">
+        <input type="search" id="product-search" aria-label="Поиск по товарам и брендам" placeholder="Поиск по товарам и брендам">
+        <div class="catalog-actions">
+          <button id="open-filters" class="catalog-button catalog-button-primary" type="button" aria-haspopup="dialog">Фильтры<span id="filter-count" hidden></span></button>
+          <button id="budget-shortcut" class="catalog-button" type="button" aria-pressed="false" title="Товары до 4 000 ₽">Бюджет <span class="budget-cap">до 4 000 ₽</span></button>
+          <button id="style-shortcut" class="catalog-button" type="button" aria-haspopup="dialog">Стиль</button>
+        </div>
+      </div>
+      <p id="active-filters" class="active-filters" hidden></p>
+      <div class="catalog-status">
+        <p id="product-count" aria-live="polite"></p>
+        <label class="catalog-sort" for="product-sort">Сортировка <select id="product-sort"><option value="featured">По подборке</option><option value="low">Сначала дешевле</option><option value="high">Сначала дороже</option></select></label>
+      </div>
+      <div class="comparison-dock" id="comparison-dock" hidden>
+        <div><strong id="comparison-count"></strong><span id="comparison-hint"></span></div>
+        <div class="catalog-actions"><button id="clear-comparison" class="catalog-button" type="button">Очистить</button><button id="open-comparison" class="catalog-button catalog-button-primary" type="button" aria-haspopup="dialog" disabled>Сравнить</button></div>
+      </div>
+      <p id="comparison-status" class="visually-hidden" role="status"></p>
       <div id="product-grid" class="product-grid"></div>
-      <p id="empty-products" class="empty-products" hidden>По этим фильтрам ничего не найдено. Попробуй изменить поиск или бюджет.</p>
-      <p class="catalog-note">Подборка сверена со страницами магазинов 23 ноября 2026 года. Актуальную цену, размеры и наличие смотри в магазине.</p>
+      <div id="empty-products" class="empty-products" hidden><p>По этим условиям ничего не найдено.</p><button id="clear-results-filters" class="catalog-button" type="button">Сбросить фильтры и поиск</button></div>
+      <p class="catalog-note">Цены взяты из карточек магазинов. Актуальную цену, размеры и наличие смотри у продавца. Метки стиля подбирает Fashion Check.</p>
+      <dialog id="filters-dialog" class="catalog-dialog filters-dialog" aria-labelledby="filter-title">
+        <form id="catalog-filters" class="filter-layout">
+          <header class="dialog-heading"><h2 id="filter-title">Фильтры</h2><button class="catalog-button dialog-close" type="button" data-close aria-label="Закрыть фильтры">×</button></header>
+          <div class="filter-selects">
+            <label class="filter-field" for="product-category">Категория<select id="product-category" autofocus><option value="">Все категории</option></select></label>
+            <label class="filter-field" for="product-brand">Бренд<select id="product-brand"><option value="">Все бренды</option></select></label>
+          </div>
+          <fieldset class="filter-price">
+            <legend>Диапазон цен</legend>
+            <div class="range-values"><output id="price-min-value" for="price-min"></output><output id="price-max-value" for="price-max"></output></div>
+            <div class="dual-range" id="price-range">
+              <div class="range-track" aria-hidden="true"><div class="range-fill"></div></div>
+              <input id="price-min" type="range" min="0" max="17000" value="0" step="1" aria-label="Цена от">
+              <input id="price-max" type="range" min="0" max="17000" value="17000" step="1" aria-label="Цена до">
+            </div>
+            <div class="price-fields">
+              <label class="filter-field" for="price-from">От, ₽<input id="price-from" type="number" min="0" step="1" inputmode="numeric"></label>
+              <label class="filter-field" for="price-to">До, ₽<input id="price-to" type="number" min="0" step="1" inputmode="numeric"></label>
+            </div>
+          </fieldset>
+          <fieldset class="style-filter" id="style-filter"><legend>Стиль</legend><p>Можно выбрать несколько.</p><div id="style-options" class="style-options"></div></fieldset>
+          <footer class="dialog-actions"><button id="reset-filters" class="catalog-button" type="button">Сбросить</button><button id="apply-filters" class="catalog-button catalog-button-primary" type="submit">Показать товары</button></footer>
+        </form>
+      </dialog>
+      <dialog id="comparison-dialog" class="catalog-dialog comparison-dialog" aria-labelledby="comparison-title">
+        <header class="dialog-heading"><h2 id="comparison-title">Сравнение товаров</h2><button class="catalog-button dialog-close" type="button" data-close aria-label="Закрыть сравнение" autofocus>×</button></header>
+        <div id="comparison-content"></div>
+      </dialog>
     </section>
   </main>
 </div>
